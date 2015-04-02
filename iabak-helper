@@ -2,6 +2,8 @@
 set -e
 
 NUMCOPIES=4
+IABAK_DIR=$(pwd)
+SHARD_DIR=$IABAK_DIR
 
 echo "Welcome to iabak version 0.0"
 echo "ALPHA TEST, use with caution"
@@ -76,8 +78,8 @@ cloneshard () {
 	git config user.name "$(whoami)"
 	git config user.email "$(whoami)@iabak"
 	git annex init
-	cp ../id_rsa .git/annex/id_rsa
-	cp ../id_rsa.pub .git/annex/id_rsa.pub
+	cp "$IABAK_DIR/id_rsa" .git/annex/id_rsa
+	cp "$IABAK_DIR/id_rsa.pub" .git/annex/id_rsa.pub
 	git remote add origin "$user:$dir"
 	git config remote.origin.annex-ssh-options "-i .git/annex/id_rsa"
 	git annex sync
@@ -123,6 +125,7 @@ installgitannex () {
 	fi
 }
 
+cd "$SHARD_DIR"
 if [ -d shard1 ]; then
 	installgitannex
 	cd shard1
