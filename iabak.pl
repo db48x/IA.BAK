@@ -32,7 +32,7 @@ $ENV{'PATH'} = getcwd() . ($^O =~/linux/ ? "/git-annex.linux:" : "/git-annex.osx
 my $NEED_PRERELEASE=0;
 my $NUMCOPIES=4;
 
-system('git pull origin');
+system('git pull origin || true');
 my @curShardDirs = sharddir();
 if( ~~ @curShardDirs != 0){
 	unless(-e 'iabak-cronjob.log' ){
@@ -69,7 +69,88 @@ EOF
                 exit 0;
             }
         }
+        print "\nFilled up available disk space, so stopping here!\n";
     }
+} else{
+    my $localdir = randomnew();
+     if(length $localdir ==0){
+        print "No new shrads are currently available. Please try again later!\n";
+        exit 1;
+     }
+     print "Looks like this is a new IA backup. I'm going to put it in\n";
+     print getcwd() . "$localdir\n";
+     print "This will use some disk space :) \n";
+     print "Press enter to confirm or ctrl-C to cancel:";
+     <STDIN>;
+     
+     installgitannex();
+     checkoutshard($localdir);
+     chdir $localdir;
+     setup();
+     download(); 
+
+}
+
+
+##############################
+##### and now some subs ######
+##############################
+
+sub changeEmail{
+    promptEmail();
+    open(FILE, "<", ".registrationemail");
+    my $registrationemail = <FILE>;
+    close FILE;
+    for(glob("shard*")){
+        if ( -d $_){
+            print "Updating $_\n";
+            chdir($_);
+            my $uuid = `git config annex.uuid`;
+            chdir("..");
+            open(PUB, "<", "id_rsa.pub");
+            my $pub = <PUB>;
+            close PUB;
+            print Dumper $pub;
+            print "\n\n";
+            my $cmd = "./register-helper.pl ". uc($_) ." ". $uuid . " ". $registrationemail . " " . $pub;
+            print Dumper $cmd;
+            print "\n\n";
+            get(`$cmd`);
+        }
+    }
+    print "\nYour email address should be updated now.\n";
+}
+
+sub promptEmail{
+
+    print "\nTo register to participate in the IA.BAK project, please\nenter a contact email address.\n\nWe will keep this email private, and only use it to contact\nyou if there is a problem with your portion of the Internet Archive backup.\n\nIt's important we have a way to get in touch with you,so that this backup can be as reliable as possible!\n\n";
+
+
+    my $e1; my $e2="error";
+    do{
+        print "\n";
+        print "email adress> ";
+        $e1 = <STDIN>;
+        unless($e1 =~ /.+@.+?\.+/){
+            print "That does not look like an email address. Try again..\n";
+            next;
+        }
+        if(index(" ", $e1) != -1){
+            print "Please enter a bare email\@example.com adress. It cannot contain any spaces\n";
+            next;
+        }
+        print "re-enter email address to verify> ";
+        $e2 = <STDIN>;
+        if($e1 eq $e2){
+            $|=1;
+            open(FILE, ">", ".registrationemail");
+            print FILE "$e1";
+            close FILE;
+            $|=0;
+        }else{
+            print "Emails don't match! Try again..\n";
+        }
+    }while(! $e1 eq $e2);
 }
 
 sub checkoutshard{
@@ -80,10 +161,11 @@ sub checkoutshard{
     }
     
     my $top = getcwd();
-    my $prevshard = (glob("shard*")[0]);
+    my $prevshard = ((<shard*>)[0]);
+    print Dumper $prevshard;
     
     unless( -e ".registrationemail"){
-        change-email();
+        changeEmail();
     }
     open(REG, "<", ".registrationemail");
     my $registrationemail = ~~<REG>;
@@ -97,17 +179,16 @@ sub checkoutshard{
         return;
     }
     (my $localdir, my $repourl, my $status) = split " ", $l;
-    print Dumper "DEBUG: $localdir \t $repourl \t $status";
     system("git init $localdir");
     chdir($localdir);
     my $username = $ENV{USER};
-    system("git config user.name $username ; git config user.email $username@iabak ; git config gc.auto 0 ; git annex init");
+    system("git config user.name $username ; git config user.email $username\@iabak ; git config gc.auto 0 ; git annex init");
     my $uuid=`git config annex.uuid`;
     chdir("..");
-    checkssh($repourl, $uuid);
+    checkssh($repourl, $uuid, $registrationemail);
     chdir($localdir);
-    cp "../id_rsa", ".git/annex/id_rsa";
-    cp "../id_rsa.pub", ".git/annex/id_rsa.pub";
+    copy "../id_rsa", ".git/annex/id_rsa";
+    copy "../id_rsa.pub", ".git/annex/id_rsa.pub";
     system("git remote add origin $repourl ; git config remove.origin.annex-ssh-options \"-i .git/annex/id_rsa\" ; git annex sync");
     chdir($top);
     unless(length $prevshard == 0){
@@ -127,6 +208,7 @@ sub checkoutshard{
 sub checkssh{
     my $repourl = shift; # f.e SHARD3@iabak.archiveteam.org:shard3
     my $uuid = shift;  # generated id
+    my $registrationemail = shift;
     unless (-e "id_rsa"){
         system("ssh-keygen -q -P \"\" -t rsa -f ./id_rsa");
     }
@@ -138,9 +220,22 @@ sub checkssh{
         print "Seem you're not set up yet for access to $repourl yet. Let's fix that..\n";
 # TODO        
         # wget -O- "$(./register-helper.pl "$SHARD" "$uuid" "$registrationemail" "$(cat id_rsa.pub)")"
-        sleep 1;
-        # wget -q -O- http://iabak.archiveteam.org/cgi-bin/pushme.cgi >/dev/null 2>&1 || true
-        checkssh $repourl, $uuid;
+        my @cmd;
+        {
+        local $/=undef;
+            open(PUB, "<", "id_rsa.pub");
+            my $pub = <PUB>;
+            @cmd = ("./register-helper.pl", uc($dir), $uuid, $registrationemail, $pub);
+            close PUB;
+        }
+        $cmd[4] =~ s/(\s)/\ /g;
+        chomp @cmd;
+        print Dumper @cmd;
+        my $output = `@cmd`;
+        get($output);
+        sleep 1;  #replace with 1
+        get("http://iabak.archiveteam.org/cgi-bin/pushme.cgi");
+        checkssh($repourl, $uuid);
     }
 }
 
@@ -188,7 +283,6 @@ sub handleshard{
 sub download{
     system("git annex sync");
     # periodicsync &;
-    #using <<EOL causes perl (use warnings, diagnostics) to get creepy as hell
     print "
 Here goes! Downloading from Internet Archive.
 (This can be safely interrupted at any time with Ctrl-C)
