@@ -410,7 +410,6 @@ sub register {
     $q->param("pubkey", $pubkey);
     my $url=$q->self_url;
     $url=~s!^http://localhost!http://iabak.archiveteam.org/cgi-bin/register.cgi!;
-    print Dumper $url;
     my $result = get($url);
-    print Dumper $result;
+    # TODO: check the restult to make sure that the registration succeeded
 }
