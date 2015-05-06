@@ -28,6 +28,10 @@ use File::Basename;
 use List::Util qw (shuffle first);
 
 
+# get("http://www.google.com") || die "Check your internet connection \n";
+$|=1;
+
+
 $ENV{'PATH'} = getcwd() . ($^O =~/linux/ ? "/git-annex.linux:" : "/git-annex.osx:"). $ENV{'PATH'};
 my $NEED_PRERELEASE=0;
 my $NUMCOPIES=4;
@@ -78,10 +82,10 @@ EOF
         exit 1;
      }
      print "Looks like this is a new IA backup. I'm going to put it in\n";
-     print getcwd() . "$localdir\n";
+     print getcwd() . "/$localdir\n";
      print "This will use some disk space :) \n";
      print "Press enter to confirm or ctrl-C to cancel:";
-     <STDIN>;
+     print ~~<>;
      
      installgitannex();
      checkoutshard($localdir);
@@ -110,11 +114,11 @@ sub changeEmail{
             open(PUB, "<", "id_rsa.pub");
             my $pub = <PUB>;
             close PUB;
-            print Dumper $pub;
-            print "\n\n";
+            # print Dumper $pub;
+            # print "\n\n";
             my $cmd = "./register-helper.pl ". uc($_) ." ". $uuid . " ". $registrationemail . " " . $pub;
-            print Dumper $cmd;
-            print "\n\n";
+            # print Dumper $cmd;
+            # print "\n\n";
             get(`$cmd`);
         }
     }
@@ -126,11 +130,12 @@ sub promptEmail{
     print "\nTo register to participate in the IA.BAK project, please\nenter a contact email address.\n\nWe will keep this email private, and only use it to contact\nyou if there is a problem with your portion of the Internet Archive backup.\n\nIt's important we have a way to get in touch with you,so that this backup can be as reliable as possible!\n\n";
 
 
-    my $e1; my $e2="error";
-    do{
-        print "\n";
-        print "email adress> ";
-        $e1 = <STDIN>;
+    my $e1="e"; 
+    my $e2="error";
+    until($e1 eq $e2){
+        print "\nemail adress> ";
+        $e1 = ~~<>;
+        print "you typed $e1\n";
         unless($e1 =~ /.+@.+?\.+/){
             print "That does not look like an email address. Try again..\n";
             next;
@@ -142,19 +147,19 @@ sub promptEmail{
         print "re-enter email address to verify> ";
         $e2 = <STDIN>;
         if($e1 eq $e2){
-            $|=1;
             open(FILE, ">", ".registrationemail");
             print FILE "$e1";
             close FILE;
-            $|=0;
         }else{
             print "Emails don't match! Try again..\n";
         }
-    }while(! $e1 eq $e2);
+    }
+    
 }
 
 sub checkoutshard{
     my $shard = shift;
+    # print "shard: $shard\n";
     if(-d $shard){
         print "$shard already checked out";
         return;
@@ -162,22 +167,23 @@ sub checkoutshard{
     
     my $top = getcwd();
     my $prevshard = ((<shard*>)[0]);
-    print Dumper $prevshard;
     
     unless( -e ".registrationemail"){
         changeEmail();
     }
     open(REG, "<", ".registrationemail");
-    my $registrationemail = ~~<REG>;
+    my $registrationemail = <REG>;
     close REG;
-    
+
     open(REP, "<", "repolist");
-    my $l = first {$shard} <REP>;
+    my $l = (grep /$shard/, <REP>)[0];
     close REP;
+    
     unless(length $l){
         print "Shard not found in repolist";
         return;
     }
+    print "\n\n$l\n";
     (my $localdir, my $repourl, my $status) = split " ", $l;
     system("git init $localdir");
     chdir($localdir);
@@ -221,18 +227,17 @@ sub checkssh{
 # TODO        
         # wget -O- "$(./register-helper.pl "$SHARD" "$uuid" "$registrationemail" "$(cat id_rsa.pub)")"
         my @cmd;
-        {
-        local $/=undef;
-            open(PUB, "<", "id_rsa.pub");
-            my $pub = <PUB>;
-            @cmd = ("./register-helper.pl", uc($dir), $uuid, $registrationemail, $pub);
-            close PUB;
-        }
+        open(PUB, "<", "id_rsa.pub");
+        my $pub = <PUB>;
+        chomp $pub;
+        @cmd = ("./register-helper.pl", uc($dir), $uuid, $registrationemail, lc($pub));
+        close PUB;
+
         $cmd[4] =~ s/(\s)/\ /g;
         chomp @cmd;
-        print Dumper @cmd;
-        my $output = `@cmd`;
-        get($output);
+        my @output = `@cmd`;
+        print Dumper @output;
+        # get($output);
         sleep 1;  #replace with 1
         get("http://iabak.archiveteam.org/cgi-bin/pushme.cgi");
         checkssh($repourl, $uuid);
@@ -247,7 +252,8 @@ sub randomnew{
     @active = (@active) ? @active : grep {/reserve$/} @repos ;
     my @existRepos;
     for(@active){
-    	push @existRepos, $_;
+        m/(.*?) /;
+    	push @existRepos, $1 unless -d $1;
     }
     return ((split " ", $existRepos[rand @existRepos])[0]);   
 }
