@@ -111,12 +111,7 @@ sub changeEmail{
             chdir($_);
             my $uuid = `git config annex.uuid`;
             chdir("..");
-            open(PUB, "<", "id_rsa.pub");
-            my $pub = <PUB>;
-            close PUB;
-            # print Dumper $pub;
-            # print "\n\n";
-            register(uc($_), $uuid, $registrationemail, $pub);
+            register($_, $uuid, $registrationemail);
         }
     }
     print "\nYour email address should be updated now.\n";
@@ -223,11 +218,7 @@ sub checkssh{
         print "Seem you're not set up yet for access to $repourl yet. Let's fix that..\n";
 # TODO        
         my @cmd;
-        open(PUB, "<", "id_rsa.pub");
-        my $pub = <PUB>;
-        close PUB;
-        chomp $pub;
-        register(uc($dir), $uuid, $registrationemail, $pub);
+        register($dir, $uuid, $registrationemail);
         sleep 1;  #replace with 1
         get("http://iabak.archiveteam.org/cgi-bin/pushme.cgi");
         checkssh($repourl, $uuid);
@@ -401,10 +392,16 @@ sub stillhavespace {
 
 sub register {
     my ($shard, $uuid, $email, $pubkey) = @_;
+    unless ($pubkey) {
+        open(PUB, "<", "id_rsa.pub");
+        $pubkey = <PUB>;
+        close PUB;
+    }
+    chomp $pubkey;
     $pubkey=~s/\+/_/g;
 
     my $q=CGI->new;
-    $q->param("shard", $shard);
+    $q->param("shard", uc($shard));
     $q->param("uuid", $uuid);
     $q->param("email", $email);
     $q->param("pubkey", $pubkey);
